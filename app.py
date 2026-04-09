@@ -147,36 +147,41 @@ def extract_deal_fields(text):
 def generate_pdf_report(cp, n_mo, dep_pct, dep_amt, adm_pct, adm_amt, r_m, inc, pd_v, res, mkt_m, mkt_tot, over_amt, over_pct, df_sens):
     if FPDF is None:
         return None
+        
+    # SAFETY FUNCTION: Strips out fancy unicode characters that crash FPDF
+    def clean(txt):
+        txt = str(txt).replace("−", "-").replace("·", "-").replace("✅", "").replace("🔴", "").replace("🟡", "").replace("⚠️", "").replace("🔵", "").replace("⛔", "").replace("📉", "")
+        return txt.encode('latin-1', 'replace').decode('latin-1')
     
     pdf = FPDF()
     pdf.add_page()
     
     # Fonts
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "RADCF Fair Pricing Report", ln=True, align='C')
+    pdf.cell(0, 10, clean("RADCF Fair Pricing Report"), ln=True, align='C')
     
     pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, "Actuarial Evaluation of Consumer Overpricing in Kenya's Hire-Purchase Market", ln=True, align='C')
+    pdf.cell(0, 6, clean("Actuarial Evaluation of Consumer Overpricing in Kenya's Hire-Purchase Market"), ln=True, align='C')
     
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S (EAT)")
     report_id = f"RADCF-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
     
     pdf.set_font("Arial", 'I', 9)
-    pdf.cell(0, 5, f"Generated: {timestamp}", ln=True, align='C')
-    pdf.cell(0, 5, f"Report ID: {report_id}", ln=True, align='C')
+    pdf.cell(0, 5, clean(f"Generated: {timestamp}"), ln=True, align='C')
+    pdf.cell(0, 5, clean(f"Report ID: {report_id}"), ln=True, align='C')
     pdf.ln(5)
     
     def section_title(title):
         pdf.set_font("Arial", 'B', 12)
         pdf.set_fill_color(220, 220, 220)
-        pdf.cell(0, 8, title, ln=True, fill=True)
+        pdf.cell(0, 8, clean(title), ln=True, fill=True)
         pdf.ln(2)
 
     def row(label, value):
         pdf.set_font("Arial", 'B', 10)
-        pdf.cell(80, 6, label)
+        pdf.cell(80, 6, clean(label))
         pdf.set_font("Arial", '', 10)
-        pdf.cell(0, 6, str(value), ln=True)
+        pdf.cell(0, 6, clean(value), ln=True)
 
     # 1. Inputs
     section_title("1. Contract Summary (Inputs)")
@@ -191,7 +196,7 @@ def generate_pdf_report(cp, n_mo, dep_pct, dep_amt, adm_pct, adm_amt, r_m, inc, 
     # 2. Risk Model
     section_title("2. Risk Model (PD Estimation)")
     pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 6, "PD = 1 / (1 + exp(-(3.0267 - 1.2553 * ln(income/1000))))", ln=True)
+    pdf.cell(0, 6, clean("PD = 1 / (1 + exp(-(3.0267 - 1.2553 * ln(income/1000))))"), ln=True)
     pd_lbl, _, _ = pd_badge(pd_v)
     row("Estimated PD", f"{pd_v:.3f}")
     row("Risk Interpretation", pd_lbl)
@@ -200,9 +205,9 @@ def generate_pdf_report(cp, n_mo, dep_pct, dep_amt, adm_pct, adm_amt, r_m, inc, 
     # 3. Core Math
     section_title("3. RADCF Pricing Computation (Core)")
     pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 6, f"CF_revised = OP + AdminCost - Deposit = KSh {res['cf_revised']:,.2f}", ln=True)
-    pdf.cell(0, 6, f"AF = (1 - (1+r)^-n) / r = {res['annuity_factor']:.4f}", ln=True)
-    pdf.cell(0, 6, f"M = CF_revised / ((1 - PD) * AF) = KSh {res['monthly']:,.2f}", ln=True)
+    pdf.cell(0, 6, clean(f"CF_revised = OP + AdminCost - Deposit = KSh {res['cf_revised']:,.2f}"), ln=True)
+    pdf.cell(0, 6, clean(f"AF = (1 - (1+r)^-n) / r = {res['annuity_factor']:.4f}"), ln=True)
+    pdf.cell(0, 6, clean(f"M = CF_revised / ((1 - PD) * AF) = KSh {res['monthly']:,.2f}"), ln=True)
     pdf.ln(4)
 
     # 4. Results
@@ -227,31 +232,31 @@ def generate_pdf_report(cp, n_mo, dep_pct, dep_amt, adm_pct, adm_amt, r_m, inc, 
     # 6. Sensitivity
     section_title("6. Sensitivity Analysis (Stress Test)")
     pdf.set_font("Arial", 'B', 9)
-    pdf.cell(40, 6, "Scenario", border=1)
-    pdf.cell(30, 6, "PD", border=1)
-    pdf.cell(30, 6, "Admin%", border=1)
-    pdf.cell(20, 6, "r", border=1)
-    pdf.cell(35, 6, "Fair Monthly", border=1)
-    pdf.cell(35, 6, "Fair Total", border=1, ln=True)
+    pdf.cell(40, 6, clean("Scenario"), border=1)
+    pdf.cell(30, 6, clean("PD"), border=1)
+    pdf.cell(30, 6, clean("Admin%"), border=1)
+    pdf.cell(20, 6, clean("r"), border=1)
+    pdf.cell(35, 6, clean("Fair Monthly"), border=1)
+    pdf.cell(35, 6, clean("Fair Total"), border=1, ln=True)
     
     pdf.set_font("Arial", '', 9)
     for _, s_row in df_sens.iterrows():
-        pdf.cell(40, 6, str(s_row['Scenario']), border=1)
-        pdf.cell(30, 6, f"{s_row['PD']:.3f}", border=1)
-        pdf.cell(30, 6, f"{s_row['Admin %']:.1f}", border=1)
-        pdf.cell(20, 6, f"{s_row['r']:.3f}", border=1)
-        pdf.cell(35, 6, f"KSh {s_row['Fair Monthly (KSh)']:,.2f}", border=1)
-        pdf.cell(35, 6, f"KSh {s_row['Fair Total (KSh)']:,.2f}", border=1, ln=True)
+        pdf.cell(40, 6, clean(s_row['Scenario']), border=1)
+        pdf.cell(30, 6, clean(f"{s_row['PD']:.3f}"), border=1)
+        pdf.cell(30, 6, clean(f"{s_row['Admin %']:.1f}"), border=1)
+        pdf.cell(20, 6, clean(f"{s_row['r']:.3f}"), border=1)
+        pdf.cell(35, 6, clean(f"KSh {s_row['Fair Monthly (KSh)']:,.2f}"), border=1)
+        pdf.cell(35, 6, clean(f"KSh {s_row['Fair Total (KSh)']:,.2f}"), border=1, ln=True)
     pdf.ln(6)
 
     # 7. Conclusion
     section_title("7. Conclusion & Recommendation")
     pdf.set_font("Arial", '', 10)
     conc = f"Based on the RADCF framework, the actuarially fair repayment plan is: Deposit KSh {res['deposit_amount']:,.2f}, monthly installment KSh {res['monthly']:,.2f}, and fair total KSh {res['fair_total']:,.2f}."
-    pdf.multi_cell(0, 6, conc)
+    pdf.multi_cell(0, 6, clean(conc))
     if mkt_tot > 0 or mkt_m > 0:
         lbl, _, _ = fairness_verdict(over_pct)
-        pdf.multi_cell(0, 6, f"The market deal was assessed as {lbl}. Overpricing was {over_pct*100:.2f}% relative to RADCF fair value.")
+        pdf.multi_cell(0, 6, clean(f"The market deal was assessed as {lbl}. Overpricing was {over_pct*100:.2f}% relative to RADCF fair value."))
 
     # Generate Bytes
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -417,7 +422,6 @@ with tabs[0]:
         market_monthly_in  = st.number_input("Market monthly installment (KSh) — optional", 0.0, step=100.0, value=0.0)
         market_total_in    = st.number_input("Market total repayment (KSh) — optional", 0.0, step=500.0, value=0.0)
 
-    # ── Compute ──
     pd_val = logistic_pd(income_ksh)
     res    = fair_installment(cash_price, deposit_pct, admin_cost_pct, int(n_months), r_monthly, pd_val)
     iti    = (res["monthly"] / income_ksh * 100.0) if income_ksh > 0 else float("nan")
@@ -595,11 +599,11 @@ with tabs[0]:
 
     scenarios = [
         ("Base",     pd_val,            admin_cost_pct,    r_monthly),
-        ("PD −10%",  max(0.0, pd_val*0.9), admin_cost_pct, r_monthly),
+        ("PD -10%",  max(0.0, pd_val*0.9), admin_cost_pct, r_monthly),
         ("PD +10%",  min(1.0, pd_val*1.1), admin_cost_pct, r_monthly),
         ("Admin 8%", pd_val,            8.0,               r_monthly),
         ("r +2pp",   pd_val,            admin_cost_pct,    r_monthly + 0.02),
-        ("r −1pp",   pd_val,            admin_cost_pct,    max(0.001, r_monthly - 0.01)),
+        ("r -1pp",   pd_val,            admin_cost_pct,    max(0.001, r_monthly - 0.01)),
     ]
     rows, base_total = [], None
     for name, pd_s, adm_s, r_s in scenarios:
@@ -705,7 +709,8 @@ with tabs[1]:
             ("Probability of Default",  f"{pd2:.1%}",                f"{pd_icon2} {pd_lbl2}",  pd_col2),
             ("Fair Monthly (KSh)",      f"KSh {res2['monthly']:,.0f}", "RADCF installment",    TEXT),
             ("Fair Total (KSh)",        f"KSh {res2['fair_total']:,.0f}", "Deposit + months",   TEXT),
-            ("Affordability (ITI)",     f"{iti2:.1f}%" if np.isfinite(iti2) else "—", f"{aff_icon2} {aff_lbl2}", aff_col2),
+            ("Affordability (ITI)",     f"{iti2:.1f}%" if np.isfinite(iti2) else "—",
+                                         f"{aff_icon2} {aff_lbl2}",                            aff_col2),
         ]),
     ]:
         for cw, (title, value, sub, c) in zip(cols_tup, items):
@@ -782,7 +787,7 @@ with tabs[2]:
         ("KSh 40k–70k",   55_000),
         ("Above KSh 70k", 85_000),
     ]
-    raw_dr = [62.6, 46.8, 33.3, 21.5, 13.9, 9.6]   
+    raw_dr = [62.6, 46.8, 33.3, 21.5, 13.9, 9.6]   # from Table 2 KCHSP 2022
 
     band_rows = []
     for (lbl, mid), raw_d in zip(bands, raw_dr):
