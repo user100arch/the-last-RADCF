@@ -531,6 +531,12 @@ with tabs[0]:
               </p>
             </div>""", unsafe_allow_html=True)
 
+    # ---> DEFAULT INITIALIZATION ADDED HERE <---
+    mkt_monthly = 0.0
+    mkt_total = 0.0
+    over_amt = 0.0
+    over_pct = float("nan")
+
     # ── Market comparison ──
     has_market = market_monthly_in > 0 or market_total_in > 0
     if has_market:
