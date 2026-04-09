@@ -110,17 +110,23 @@ def extract_deal_fields(text):
     t = (text or "").lower().replace(",", " ")
     money = r"(?:ksh|kes)\s*([0-9]{3,})"
     pct   = r"([0-9]{1,2}(?:\.[0-9]+)?)\s*%"
+    
     def _money(p):
         m = re.search(p + r"\s*[:\-]?\s*" + money, t)
-        return float(m.group(2)) if m else None
+        # Using [-1] ensures we always grab the last captured group (the number)
+        return float(m.groups()[-1]) if m else None
+        
     def _pct(p):
         m = re.search(p + r"\s*[:\-]?\s*" + pct, t)
-        return float(m.group(2)) if m else None
+        return float(m.groups()[-1]) if m else None
+        
     cp = _money(r"(cash price|cash|price)")
     if cp is None:
         m2 = re.search(money, t)
         cp = float(m2.group(1)) if m2 else None
+        
     mt = re.search(r"([0-9]{1,2})\s*(months|month|mos|mo)\b", t)
+    
     return {
         "cash_price":         cp,
         "deposit_pct":        _pct(r"(deposit|downpayment|down payment)"),
@@ -129,7 +135,6 @@ def extract_deal_fields(text):
         "monthly_installment":_money(r"(installment|instalment|monthly|per month)"),
         "admin_pct":          _pct(r"(admin|administration|processing)\s*(fee|cost)?"),
     }
-
 
 # ============================================================
 # Page config & CSS
