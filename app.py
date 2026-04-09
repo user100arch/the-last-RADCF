@@ -412,16 +412,24 @@ with tabs[0]:
 
     with colB:
         st.markdown("**💰 Contract Terms**")
-        deposit_pct    = st.number_input("Deposit (%)", 0.0, 100.0, 30.0, 1.0, help="Typical: 30% of cash price")
-        admin_cost_pct = st.number_input("Administrative cost (%)", 0.0, 30.0, 5.0, 0.5, help="Research default: 5% of cash price")
-        r_monthly      = st.number_input("Monthly discount rate r", 0.0, 1.0, 0.02, 0.005, format="%.3f", help="2% ≈ 24% p.a.")
+        deposit_pct    = st.number_input("Deposit (%)", 0.0, 100.0, 30.0, 1.0,
+                                          help="Typical: 30% of cash price")
+        admin_cost_pct = st.number_input("Administrative cost (%)", 0.0, 30.0, 5.0, 0.5,
+                                          help="Research default: 5% of cash price")
+        r_monthly      = st.number_input("Monthly discount rate r", 0.0, 1.0, 0.02, 0.005,
+                                          format="%.3f", help="2% ≈ 24% p.a.")
 
     with colC:
         st.markdown("**👤 Borrower & Market**")
-        income_ksh         = st.number_input("Monthly income (KSh)", 0.0, 1e7, 22000.0, 1000.0, help="Used to estimate PD")
-        market_monthly_in  = st.number_input("Market monthly installment (KSh) — optional", 0.0, step=100.0, value=0.0)
-        market_total_in    = st.number_input("Market total repayment (KSh) — optional", 0.0, step=500.0, value=0.0)
+        income_ksh         = st.number_input("Monthly income (KSh)", 0.0, 1e7, 22000.0, 1000.0,
+                                              help="Used to estimate PD via calibrated logistic model")
+        market_monthly_in  = st.number_input("Market monthly installment (KSh) — optional",
+                                              0.0, step=100.0, value=0.0,
+                                              help="Lender's quoted installment for overpricing comparison")
+        market_total_in    = st.number_input("Market total repayment (KSh) — optional",
+                                              0.0, step=500.0, value=0.0)
 
+    # ── Compute ──
     pd_val = logistic_pd(income_ksh)
     res    = fair_installment(cash_price, deposit_pct, admin_cost_pct, int(n_months), r_monthly, pd_val)
     iti    = (res["monthly"] / income_ksh * 100.0) if income_ksh > 0 else float("nan")
@@ -432,12 +440,14 @@ with tabs[0]:
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown('<div class="sec-h">RADCF Fair Pricing Results</div>', unsafe_allow_html=True)
 
+    # ── Primary KPI row ──
     k1, k2, k3, k4 = st.columns(4)
     for col_w, title, value, sub, v_col in [
         (k1, "Probability of Default",     f"{pd_val:.1%}",          f"{pd_icon} {pd_lbl}",  pd_col),
         (k2, "Fair Monthly Installment",   f"KSh {res['monthly']:,.0f}", f"Over {n_months} months", TEXT),
         (k3, "Fair Total Repayment",       f"KSh {res['fair_total']:,.0f}", "Deposit + installments", TEXT),
-        (k4, "Affordability Ratio (ITI)",  f"{iti:.1f}%" if np.isfinite(iti) else "—", f"{aff_icon} {aff_lbl}", aff_col),
+        (k4, "Affordability Ratio (ITI)",  f"{iti:.1f}%" if np.isfinite(iti) else "—",
+                                             f"{aff_icon} {aff_lbl}", aff_col),
     ]:
         with col_w:
             st.markdown(f"""<div class="kcard">
@@ -447,6 +457,8 @@ with tabs[0]:
             </div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Secondary detail row ──
     d1, d2, d3, d4 = st.columns(4)
     for col_w, title, value, sub in [
         (d1, "Deposit Amount",          f"KSh {res['deposit_amount']:,.0f}", f"{deposit_pct:.0f}% of cash price"),
@@ -519,7 +531,7 @@ with tabs[0]:
               </p>
             </div>""", unsafe_allow_html=True)
 
-    mkt_monthly, mkt_total, over_amt, over_pct, fscore = 0, 0, 0, float("nan"), 0
+    # ── Market comparison ──
     has_market = market_monthly_in > 0 or market_total_in > 0
     if has_market:
         st.markdown("<hr>", unsafe_allow_html=True)
@@ -550,7 +562,7 @@ with tabs[0]:
                   <p class="kcard-value" style="color:{c}">{value}</p>
                   <p class="kcard-sub">{sub}</p>
                 </div>""", unsafe_allow_html=True)
-        
+
         # APR
         principal = cash_price - res["deposit_amount"]
         im = implied_monthly_rate(principal, mkt_monthly, int(n_months))
@@ -593,17 +605,20 @@ with tabs[0]:
             margin=dict(t=45, b=10), height=320,
         )
         st.plotly_chart(fig_comp, use_container_width=True)
+    else:
+        st.info("💡 Enter a market installment or total repayment (top right column) to compare against RADCF fair value and see overpricing analysis.", icon="ℹ️")
 
+    # ── Sensitivity ──
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown('<div class="sec-h">Sensitivity & Stress Test Analysis</div>', unsafe_allow_html=True)
 
     scenarios = [
         ("Base",     pd_val,            admin_cost_pct,    r_monthly),
-        ("PD -10%",  max(0.0, pd_val*0.9), admin_cost_pct, r_monthly),
+        ("PD −10%",  max(0.0, pd_val*0.9), admin_cost_pct, r_monthly),
         ("PD +10%",  min(1.0, pd_val*1.1), admin_cost_pct, r_monthly),
         ("Admin 8%", pd_val,            8.0,               r_monthly),
         ("r +2pp",   pd_val,            admin_cost_pct,    r_monthly + 0.02),
-        ("r -1pp",   pd_val,            admin_cost_pct,    max(0.001, r_monthly - 0.01)),
+        ("r −1pp",   pd_val,            admin_cost_pct,    max(0.001, r_monthly - 0.01)),
     ]
     rows, base_total = [], None
     for name, pd_s, adm_s, r_s in scenarios:
@@ -644,6 +659,8 @@ with tabs[0]:
             margin=dict(t=48, b=10, r=80), height=290,
         )
         st.plotly_chart(fig_t, use_container_width=True)
+        best = nb.loc[nb["Delta"].abs().idxmax()]
+        st.caption(f"🎯 Most sensitive factor: **{best['Scenario']}** → KSh {best['Delta']:+,.0f} change from base")
 
     # ── PDF Export Button ──
     if FPDF is not None:
