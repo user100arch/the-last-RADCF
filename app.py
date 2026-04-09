@@ -26,6 +26,12 @@ MUTED      = "#8D99AE"
 GREEN      = "#2DC653"
 AMBER      = "#FFB703"
 
+def hex_to_rgba(hex_color, alpha=0.15):
+    """Converts a hex color to an rgba string for Plotly."""
+    hex_color = hex_color.lstrip('#')
+    r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
 
 # ============================================================
 # Core Actuarial Functions
@@ -352,10 +358,10 @@ with tabs[0]:
                 "bar": {"color": aff_col, "thickness": 0.25},
                 "bgcolor": CARD, "borderwidth": 0,
                 "steps": [
-                    {"range": [0,  20], "color": GREEN  + "25"},
-                    {"range": [20, 30], "color": ACCENT + "25"},
-                    {"range": [30, 40], "color": AMBER  + "25"},
-                    {"range": [40, 80], "color": RED    + "25"},
+                    {"range": [0,  20], "color": hex_to_rgba(GREEN)},
+                    {"range": [20, 30], "color": hex_to_rgba(ACCENT)},
+                    {"range": [30, 40], "color": hex_to_rgba(AMBER)},
+                    {"range": [40, 80], "color": hex_to_rgba(RED)},
                 ],
                 "threshold": {"line": {"color": AMBER, "width": 3}, "value": 30},
             },
