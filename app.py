@@ -1,14 +1,20 @@
 import re
 import math
+import tempfile
+import datetime
 import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
+try:
+    from fpdf import FPDF
+except ImportError:
+    FPDF = None  # Handled gracefully if not installed
+
 # ============================================================
 # RESEARCH-CALIBRATED CONSTANTS (hidden from user)
 # Egerton University · KCHSP 2022 · N=17,452 households
-# PD = 1 / (1 + exp(-(3.0267 + -1.2553 · ln(income/1000))))
 # ============================================================
 _B0 = 3.0267
 _B1 = -1.2553
@@ -36,7 +42,6 @@ def hex_to_rgba(hex_color, alpha=0.15):
 # ============================================================
 # Core Actuarial Functions
 # ============================================================
-
 def logistic_pd(income_ksh: float) -> float:
     """Calibrated model: PD = 1/(1+exp(-(β₀ + β₁·ln(income/1000))))"""
     if income_ksh <= 0:
@@ -113,7 +118,6 @@ def extract_deal_fields(text):
     
     def _money(p):
         m = re.search(p + r"\s*[:\-]?\s*" + money, t)
-        # Using [-1] ensures we always grab the last captured group (the number)
         return float(m.groups()[-1]) if m else None
         
     def _pct(p):
@@ -135,6 +139,125 @@ def extract_deal_fields(text):
         "monthly_installment":_money(r"(installment|instalment|monthly|per month)"),
         "admin_pct":          _pct(r"(admin|administration|processing)\s*(fee|cost)?"),
     }
+
+
+# ============================================================
+# PDF Generation Function
+# ============================================================
+def generate_pdf_report(cp, n_mo, dep_pct, dep_amt, adm_pct, adm_amt, r_m, inc, pd_v, res, mkt_m, mkt_tot, over_amt, over_pct, df_sens):
+    if FPDF is None:
+        return None
+    
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Fonts
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "RADCF Fair Pricing Report", ln=True, align='C')
+    
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 6, "Actuarial Evaluation of Consumer Overpricing in Kenya's Hire-Purchase Market", ln=True, align='C')
+    
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S (EAT)")
+    report_id = f"RADCF-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    
+    pdf.set_font("Arial", 'I', 9)
+    pdf.cell(0, 5, f"Generated: {timestamp}", ln=True, align='C')
+    pdf.cell(0, 5, f"Report ID: {report_id}", ln=True, align='C')
+    pdf.ln(5)
+    
+    def section_title(title):
+        pdf.set_font("Arial", 'B', 12)
+        pdf.set_fill_color(220, 220, 220)
+        pdf.cell(0, 8, title, ln=True, fill=True)
+        pdf.ln(2)
+
+    def row(label, value):
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(80, 6, label)
+        pdf.set_font("Arial", '', 10)
+        pdf.cell(0, 6, str(value), ln=True)
+
+    # 1. Inputs
+    section_title("1. Contract Summary (Inputs)")
+    row("Cash Price (OP)", f"KSh {cp:,.2f}")
+    row("Repayment Term", f"{n_mo} months")
+    row("Deposit", f"{dep_pct:.2f}% (KSh {dep_amt:,.2f})")
+    row("Admin Cost", f"{adm_pct:.2f}% (KSh {adm_amt:,.2f})")
+    row("Monthly Discount Rate r", f"{r_m:.4f} ({r_m*100:.2f}% per month)")
+    row("Borrower Monthly Income", f"KSh {inc:,.2f}")
+    pdf.ln(4)
+
+    # 2. Risk Model
+    section_title("2. Risk Model (PD Estimation)")
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 6, "PD = 1 / (1 + exp(-(3.0267 - 1.2553 * ln(income/1000))))", ln=True)
+    pd_lbl, _, _ = pd_badge(pd_v)
+    row("Estimated PD", f"{pd_v:.3f}")
+    row("Risk Interpretation", pd_lbl)
+    pdf.ln(4)
+
+    # 3. Core Math
+    section_title("3. RADCF Pricing Computation (Core)")
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 6, f"CF_revised = OP + AdminCost - Deposit = KSh {res['cf_revised']:,.2f}", ln=True)
+    pdf.cell(0, 6, f"AF = (1 - (1+r)^-n) / r = {res['annuity_factor']:.4f}", ln=True)
+    pdf.cell(0, 6, f"M = CF_revised / ((1 - PD) * AF) = KSh {res['monthly']:,.2f}", ln=True)
+    pdf.ln(4)
+
+    # 4. Results
+    section_title("4. Fair Price Outputs (Main Results)")
+    row("Deposit", f"KSh {res['deposit_amount']:,.2f}")
+    row("Fair Monthly Installment (M)", f"KSh {res['monthly']:,.2f}")
+    row("Fair Total Paid (Deposit + M*n)", f"KSh {res['fair_total']:,.2f}")
+    row("RADCF Present Value", f"KSh {res['radcf_pv']:,.2f}")
+    pdf.ln(4)
+
+    # 5. Market Comparison
+    if mkt_tot > 0 or mkt_m > 0:
+        section_title("5. Market Comparison")
+        row("Market Monthly Installment", f"KSh {mkt_m:,.2f}")
+        row("Market Total Repayment", f"KSh {mkt_tot:,.2f}")
+        row("Overpricing Amount", f"KSh {over_amt:,.2f}")
+        row("Overpricing (%)", f"{over_pct*100:.2f}%")
+        lbl, _, _ = fairness_verdict(over_pct)
+        row("Assessment", lbl)
+        pdf.ln(4)
+
+    # 6. Sensitivity
+    section_title("6. Sensitivity Analysis (Stress Test)")
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(40, 6, "Scenario", border=1)
+    pdf.cell(30, 6, "PD", border=1)
+    pdf.cell(30, 6, "Admin%", border=1)
+    pdf.cell(20, 6, "r", border=1)
+    pdf.cell(35, 6, "Fair Monthly", border=1)
+    pdf.cell(35, 6, "Fair Total", border=1, ln=True)
+    
+    pdf.set_font("Arial", '', 9)
+    for _, s_row in df_sens.iterrows():
+        pdf.cell(40, 6, str(s_row['Scenario']), border=1)
+        pdf.cell(30, 6, f"{s_row['PD']:.3f}", border=1)
+        pdf.cell(30, 6, f"{s_row['Admin %']:.1f}", border=1)
+        pdf.cell(20, 6, f"{s_row['r']:.3f}", border=1)
+        pdf.cell(35, 6, f"KSh {s_row['Fair Monthly (KSh)']:,.2f}", border=1)
+        pdf.cell(35, 6, f"KSh {s_row['Fair Total (KSh)']:,.2f}", border=1, ln=True)
+    pdf.ln(6)
+
+    # 7. Conclusion
+    section_title("7. Conclusion & Recommendation")
+    pdf.set_font("Arial", '', 10)
+    conc = f"Based on the RADCF framework, the actuarially fair repayment plan is: Deposit KSh {res['deposit_amount']:,.2f}, monthly installment KSh {res['monthly']:,.2f}, and fair total KSh {res['fair_total']:,.2f}."
+    pdf.multi_cell(0, 6, conc)
+    if mkt_tot > 0 or mkt_m > 0:
+        lbl, _, _ = fairness_verdict(over_pct)
+        pdf.multi_cell(0, 6, f"The market deal was assessed as {lbl}. Overpricing was {over_pct*100:.2f}% relative to RADCF fair value.")
+
+    # Generate Bytes
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f:
+            return f.read()
 
 # ============================================================
 # Page config & CSS
@@ -284,22 +407,15 @@ with tabs[0]:
 
     with colB:
         st.markdown("**💰 Contract Terms**")
-        deposit_pct    = st.number_input("Deposit (%)", 0.0, 100.0, 30.0, 1.0,
-                                          help="Typical: 30% of cash price")
-        admin_cost_pct = st.number_input("Administrative cost (%)", 0.0, 30.0, 5.0, 0.5,
-                                          help="Research default: 5% of cash price")
-        r_monthly      = st.number_input("Monthly discount rate r", 0.0, 1.0, 0.02, 0.005,
-                                          format="%.3f", help="2% ≈ 24% p.a.")
+        deposit_pct    = st.number_input("Deposit (%)", 0.0, 100.0, 30.0, 1.0, help="Typical: 30% of cash price")
+        admin_cost_pct = st.number_input("Administrative cost (%)", 0.0, 30.0, 5.0, 0.5, help="Research default: 5% of cash price")
+        r_monthly      = st.number_input("Monthly discount rate r", 0.0, 1.0, 0.02, 0.005, format="%.3f", help="2% ≈ 24% p.a.")
 
     with colC:
         st.markdown("**👤 Borrower & Market**")
-        income_ksh         = st.number_input("Monthly income (KSh)", 0.0, 1e7, 22000.0, 1000.0,
-                                              help="Used to estimate PD via calibrated logistic model")
-        market_monthly_in  = st.number_input("Market monthly installment (KSh) — optional",
-                                              0.0, step=100.0, value=0.0,
-                                              help="Lender's quoted installment for overpricing comparison")
-        market_total_in    = st.number_input("Market total repayment (KSh) — optional",
-                                              0.0, step=500.0, value=0.0)
+        income_ksh         = st.number_input("Monthly income (KSh)", 0.0, 1e7, 22000.0, 1000.0, help="Used to estimate PD")
+        market_monthly_in  = st.number_input("Market monthly installment (KSh) — optional", 0.0, step=100.0, value=0.0)
+        market_total_in    = st.number_input("Market total repayment (KSh) — optional", 0.0, step=500.0, value=0.0)
 
     # ── Compute ──
     pd_val = logistic_pd(income_ksh)
@@ -312,14 +428,12 @@ with tabs[0]:
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown('<div class="sec-h">RADCF Fair Pricing Results</div>', unsafe_allow_html=True)
 
-    # ── Primary KPI row ──
     k1, k2, k3, k4 = st.columns(4)
     for col_w, title, value, sub, v_col in [
         (k1, "Probability of Default",     f"{pd_val:.1%}",          f"{pd_icon} {pd_lbl}",  pd_col),
         (k2, "Fair Monthly Installment",   f"KSh {res['monthly']:,.0f}", f"Over {n_months} months", TEXT),
         (k3, "Fair Total Repayment",       f"KSh {res['fair_total']:,.0f}", "Deposit + installments", TEXT),
-        (k4, "Affordability Ratio (ITI)",  f"{iti:.1f}%" if np.isfinite(iti) else "—",
-                                             f"{aff_icon} {aff_lbl}", aff_col),
+        (k4, "Affordability Ratio (ITI)",  f"{iti:.1f}%" if np.isfinite(iti) else "—", f"{aff_icon} {aff_lbl}", aff_col),
     ]:
         with col_w:
             st.markdown(f"""<div class="kcard">
@@ -329,8 +443,6 @@ with tabs[0]:
             </div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Secondary detail row ──
     d1, d2, d3, d4 = st.columns(4)
     for col_w, title, value, sub in [
         (d1, "Deposit Amount",          f"KSh {res['deposit_amount']:,.0f}", f"{deposit_pct:.0f}% of cash price"),
@@ -403,7 +515,7 @@ with tabs[0]:
               </p>
             </div>""", unsafe_allow_html=True)
 
-    # ── Market comparison ──
+    mkt_monthly, mkt_total, over_amt, over_pct, fscore = 0, 0, 0, float("nan"), 0
     has_market = market_monthly_in > 0 or market_total_in > 0
     if has_market:
         st.markdown("<hr>", unsafe_allow_html=True)
@@ -434,7 +546,7 @@ with tabs[0]:
                   <p class="kcard-value" style="color:{c}">{value}</p>
                   <p class="kcard-sub">{sub}</p>
                 </div>""", unsafe_allow_html=True)
-
+        
         # APR
         principal = cash_price - res["deposit_amount"]
         im = implied_monthly_rate(principal, mkt_monthly, int(n_months))
@@ -477,10 +589,7 @@ with tabs[0]:
             margin=dict(t=45, b=10), height=320,
         )
         st.plotly_chart(fig_comp, use_container_width=True)
-    else:
-        st.info("💡 Enter a market installment or total repayment (top right column) to compare against RADCF fair value and see overpricing analysis.", icon="ℹ️")
 
-    # ── Sensitivity ──
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown('<div class="sec-h">Sensitivity & Stress Test Analysis</div>', unsafe_allow_html=True)
 
@@ -506,7 +615,7 @@ with tabs[0]:
         df_sens.style.format({
             "PD": "{:.3f}", "r": "{:.4f}",
             "Fair Monthly (KSh)": "{:,.2f}", "Fair Total (KSh)": "{:,.2f}",
-        }).background_gradient(subset=["Fair Total (KSh)"], cmap="RdYlGn_r"),
+        }),
         use_container_width=True, hide_index=True,
     )
 
@@ -531,8 +640,24 @@ with tabs[0]:
             margin=dict(t=48, b=10, r=80), height=290,
         )
         st.plotly_chart(fig_t, use_container_width=True)
-        best = nb.loc[nb["Delta"].abs().idxmax()]
-        st.caption(f"🎯 Most sensitive factor: **{best['Scenario']}** → KSh {best['Delta']:+,.0f} change from base")
+
+    # ── PDF Export Button ──
+    if FPDF is not None:
+        pdf_bytes = generate_pdf_report(
+            cash_price, int(n_months), deposit_pct, res["deposit_amount"], admin_cost_pct, res["admin_amount"], 
+            r_monthly, income_ksh, pd_val, res, mkt_monthly, mkt_total, over_amt, over_pct, df_sens
+        )
+        if pdf_bytes:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.download_button(
+                label="📄 Download PDF Report",
+                data=pdf_bytes,
+                file_name=f"RADCF_Report_{datetime.datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                type="primary"
+            )
+    else:
+        st.warning("⚠️ The `fpdf` library is not installed. Add `fpdf` to your `requirements.txt` to enable PDF downloads.")
 
 
 # ════════════════════════════════════════════════════════════
@@ -580,8 +705,7 @@ with tabs[1]:
             ("Probability of Default",  f"{pd2:.1%}",                f"{pd_icon2} {pd_lbl2}",  pd_col2),
             ("Fair Monthly (KSh)",      f"KSh {res2['monthly']:,.0f}", "RADCF installment",    TEXT),
             ("Fair Total (KSh)",        f"KSh {res2['fair_total']:,.0f}", "Deposit + months",   TEXT),
-            ("Affordability (ITI)",     f"{iti2:.1f}%" if np.isfinite(iti2) else "—",
-                                         f"{aff_icon2} {aff_lbl2}",                            aff_col2),
+            ("Affordability (ITI)",     f"{iti2:.1f}%" if np.isfinite(iti2) else "—", f"{aff_icon2} {aff_lbl2}", aff_col2),
         ]),
     ]:
         for cw, (title, value, sub, c) in zip(cols_tup, items):
@@ -658,7 +782,7 @@ with tabs[2]:
         ("KSh 40k–70k",   55_000),
         ("Above KSh 70k", 85_000),
     ]
-    raw_dr = [62.6, 46.8, 33.3, 21.5, 13.9, 9.6]   # from Table 2 KCHSP 2022
+    raw_dr = [62.6, 46.8, 33.3, 21.5, 13.9, 9.6]   
 
     band_rows = []
     for (lbl, mid), raw_d in zip(bands, raw_dr):
@@ -729,7 +853,7 @@ with tabs[2]:
         "Overcharge %": lambda x: f"+{x:.1f}%" if x and x > 0 else (f"{x:.1f}%" if x is not None else "—"),
     }
     st.dataframe(
-        df_b[display_cols].style.format(fmt).background_gradient(subset=["Model PD"], cmap="Reds"),
+        df_b[display_cols].style.format(fmt),
         use_container_width=True, hide_index=True,
     )
 
