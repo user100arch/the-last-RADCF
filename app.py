@@ -565,7 +565,7 @@ with tabs[0]:
         denom_frac = (1.0 + admin_cost_pct / 100.0 - deposit_pct / 100.0)
         if denom_frac > 0:
             max_phone = (income_ksh * 0.30 * rp * res["annuity_factor"]) / denom_frac
-    eligible = np.isfinite(iti) and iti <= 40.0
+   eligible = np.isfinite(iti) and iti <= 30.0
 
     if np.isfinite(iti):
         ga_col, el_col = st.columns([1.2, 0.8])
@@ -579,7 +579,7 @@ with tabs[0]:
               <p class="kcard-label">Eligibility Status</p>
               <p style="font-size:1rem;font-weight:700;color:{e_col};margin:4px 0 10px">{e_text}</p>
               <p class="kcard-sub" style="line-height:1.9">
-                ITI = <strong>{iti:.1f}%</strong> · Threshold = 40%<br>
+                ITI = <strong>{iti:.1f}%</strong> · Threshold = 30%<br>
                 Monthly income: <strong>KSh {income_ksh:,.0f}</strong><br>
                 Max recommended phone: <strong>KSh {max_phone:,.0f}</strong>
               </p>
