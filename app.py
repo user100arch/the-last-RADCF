@@ -565,7 +565,8 @@ with tabs[0]:
         denom_frac = (1.0 + admin_cost_pct / 100.0 - deposit_pct / 100.0)
         if denom_frac > 0:
             max_phone = (income_ksh * 0.30 * rp * res["annuity_factor"]) / denom_frac
-   eligible = np.isfinite(iti) and iti <= 30.0
+    
+    eligible = np.isfinite(iti) and iti <= 30.0
 
     if np.isfinite(iti):
         ga_col, el_col = st.columns([1.2, 0.8])
