@@ -16,8 +16,8 @@ except ImportError:
 # RESEARCH-CALIBRATED CONSTANTS (hidden from user)
 # Egerton University · KCHSP 2022 · N=17,452 households
 # ============================================================
-_B0 = 3.0267
-_B1 = -1.2553
+_B0 = 7.1671
+_B1 = -1.3595
 
 # ── Colour palette ─────────────────────────────────────────
 RED        = "#E63946"
@@ -181,7 +181,7 @@ def generate_pdf_report(cp, n_mo, dep_pct, dep_amt, adm_pct, adm_amt, r_m, inc, 
     # 3. Subtitle
     pdf.set_font("Arial", 'B', 10)
     pdf.set_text_color(69, 123, 157) # LIGHT_BLUE
-    pdf.cell(0, 6, clean("Actuarial Evaluation of Consumer Overpricing in Kenya's HP Market"), ln=True, align='C')
+    pdf.cell(0, 6, clean("Actuarial Evaluation of Consumer Overpricing in Kenya's Hire Purchase Market"), ln=True, align='C')
     
     # 4. Meta details (Date & ID)
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S (EAT)")
@@ -227,7 +227,7 @@ def generate_pdf_report(cp, n_mo, dep_pct, dep_amt, adm_pct, adm_amt, r_m, inc, 
     section_title("2. Risk Model (PD Estimation)")
     pdf.set_font("Arial", 'I', 9)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 5, clean("Model: PD = 1 / (1 + exp(-(3.0267 - 1.2553 * ln(income/1000))))"), ln=True)
+    pdf.cell(0, 5, clean(f"Model: PD = 1 / (1 + exp(-({_B0} - {abs(_B1)} * ln(income/1000))))"), ln=True)
     pdf.ln(1)
     pd_lbl, _, _ = pd_badge(pd_v)
     row("Estimated Probability of Default (PD)", f"{pd_v:.3f}", True)
@@ -318,6 +318,7 @@ def generate_pdf_report(cp, n_mo, dep_pct, dep_amt, adm_pct, adm_amt, r_m, inc, 
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f:
             return f.read()
+
 # ============================================================
 # Page config & CSS
 # ============================================================
@@ -401,10 +402,10 @@ st.markdown(f"""
 st.markdown(f"""
 <div class="hero">
   <div class="hero-pill">📱 Egerton University · KCHSP 2022 · N=17,452</div>
-  <h1 class="hero-title">Actuarial Evaluation of Consumer Overpricing<br>in Kenya's Hire-Purchase Market</h1>
+  <h1 class="hero-title">Actuarial Evaluation of Consumer Overpricing<br>in Kenya's Hire Purchase Market</h1>
   <p class="hero-sub">
     <strong>Risk-Adjusted Discounted Cash Flow (RADCF) Pricing Engine</strong><br>
-    Calibrated Logistic Model · β₀ = 3.0267 · β₁ = −1.2553 · Income predicts default with AUC = 0.694
+    Calibrated Logistic Model · β₀ = {_B0} · β₁ = {_B1} · Income predicts default with AUC = 0.694
   </p>
 </div>
 """, unsafe_allow_html=True)
@@ -431,7 +432,7 @@ Market prices (M-KOPA, Watu Credit) exceed RADCF fair values by **21.7% to 155.1
 with ie2:
     with st.expander("📐 Mathematical Framework", expanded=False):
         st.markdown("**Default Probability (Research-Calibrated)**")
-        st.latex(r"PD = \frac{1}{1+e^{-(3.0267\;-\;1.2553\,\ln(\text{Income}/1000))}}")
+        st.latex(r"PD = \frac{1}{1+e^{-(" + str(_B0) + r"\;-\;" + str(abs(_B1)) + r"\,\ln(\text{Income}/1000))}}")
         st.markdown("**Annuity Factor & Fair Installment**")
         st.latex(r"AF = \frac{1-(1+r)^{-n}}{r}")
         st.latex(r"CF_{rev} = OP + \text{Admin} - \text{Deposit}")
@@ -565,7 +566,7 @@ with tabs[0]:
         denom_frac = (1.0 + admin_cost_pct / 100.0 - deposit_pct / 100.0)
         if denom_frac > 0:
             max_phone = (income_ksh * 0.30 * rp * res["annuity_factor"]) / denom_frac
-    eligible = np.isfinite(iti) and iti <= 40.0
+    eligible = np.isfinite(iti) and iti <= 30.0
 
     if np.isfinite(iti):
         ga_col, el_col = st.columns([1.2, 0.8])
@@ -579,13 +580,12 @@ with tabs[0]:
               <p class="kcard-label">Eligibility Status</p>
               <p style="font-size:1rem;font-weight:700;color:{e_col};margin:4px 0 10px">{e_text}</p>
               <p class="kcard-sub" style="line-height:1.9">
-                ITI = <strong>{iti:.1f}%</strong> · Threshold = 40%<br>
+                ITI = <strong>{iti:.1f}%</strong> · Threshold = 30%<br>
                 Monthly income: <strong>KSh {income_ksh:,.0f}</strong><br>
                 Max recommended phone: <strong>KSh {max_phone:,.0f}</strong>
               </p>
             </div>""", unsafe_allow_html=True)
 
-    # ---> DEFAULT INITIALIZATION ADDED HERE <---
     mkt_monthly = 0.0
     mkt_total = 0.0
     over_amt = 0.0
